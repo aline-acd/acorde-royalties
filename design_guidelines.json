@@ -1,0 +1,100 @@
+{
+  "theme_strategy": "Dark Theme Default. High-Contrast 'Swiss Brutalist' meets 'Luxury B2B'. Core colors: Black, Yellow, White. Deep void black backgrounds, pure white text for readability, and vibrant warning/electric yellow for CTA and data highlights.",
+  "typography": {
+    "headings": "Outfit (Weights: 600, 700, 800) - Tight tracking for high-impact.",
+    "body": "Manrope (Weights: 400, 500, 600) - Highly readable, geometric.",
+    "numbers_and_data": "JetBrains Mono - Crucial for financial tables, IDs, and admin fees.",
+    "import_instruction": "Add to index.css: @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');"
+  },
+  "colors": {
+    "background": "#050505",
+    "foreground": "#FFFFFF",
+    "primary": "#FFD700",
+    "primary_foreground": "#000000",
+    "surface": "#0F0F11",
+    "border": "#222222",
+    "muted": "#888888",
+    "forbidden_colors": ["#1B93A4", "Teal Green", "Generic SaaS Blue"]
+  },
+  "visual_enhancers": {
+    "cards": "Flat solid surfaces with 1px border-[#222222]. No soft shadows. Sharp edges or max 4px radius.",
+    "glassmorphism": "Used ONLY for sticky headers or dropdowns. bg-black/60 with backdrop-blur-xl and border-white/10.",
+    "hover_states": "Hover states should lift elements slightly (-translate-y-1) and change border to Yellow/White with high contrast.",
+    "textures": "Include subtle noise or grain on the login hero background to avoid digital flatness."
+  },
+  "component_name": {
+    "buttons": "Shadcn Button: Overridden to be sharp (rounded-none or rounded-sm), primary is Yellow with Black text, hover makes it slightly lighter yellow.",
+    "tables": "Shadcn Table: Dense padding, tabular-nums for financial data. Use pure white for values, muted grey for headers.",
+    "inputs": "Shadcn Input: bg-[#0F0F11] border-[#222222] focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400.",
+    "charts": "Recharts or Shadcn Charts. Line/Bar charts using Yellow as the primary data line, white for secondary.",
+    "toasts": "Sonner. Set theme to dark."
+  },
+  "grids": {
+    "dashboard": "Mode B: High Density Grid. grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-6.",
+    "widgets": "Use col-span-3 for summary cards, col-span-9 for main chart, col-span-12 for data tables."
+  },
+  "layouts": {
+    "admin_dashboard": "Fixed Left Sidebar (w-64, border-r border-[#222222]) + Main Content Area. Top header for user profile and quick actions.",
+    "spacing": "Generous internal padding for cards (p-6 or p-8). Gap between major sections: gap-12."
+  },
+  "motion": {
+    "transitions": "Specific transitions only. transition-transform duration-200 ease-out for buttons. Do not use transition-all.",
+    "entrance": "Staggered fade-up for dashboard widgets on load."
+  },
+  "accessibility": {
+    "contrast": "Ensure white text on #0F0F11 meets WCAG AAA. Yellow on Black meets AAA. Avoid low contrast grey text for critical financial data.",
+    "focus": "All interactive elements must have focus:ring-2 focus:ring-[#FFD700] focus:outline-none."
+  },
+  "media": {
+    "icons": "lucide-react (Standard) or install @phosphor-icons/react for duotone/high-end technical look.",
+    "images_usage": "Use the provided vinyl/abstract images for the Login page background with a bg-black/50 overlay to ensure login form readability."
+  },
+  "3d_libraries": {
+    "charts": "Recharts for financial data (Admin dashboard totals, revenue). Use clear, sharp tooltips with tabular numbers."
+  },
+  "image_urls": [
+    {
+      "url": "https://images.unsplash.com/photo-1789655467818-d0bfa4e363ea?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMHZpbnlsJTIwcmVjb3JkJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzkxMjMyOTU3fDA&ixlib=rb-4.1.0&q=85",
+      "category": "Login Page Background",
+      "description": "Abstract yellow light tracing a vinyl record. Represents music and the brand's yellow color."
+    },
+    {
+      "url": "https://images.unsplash.com/photo-1789655468505-3f9a3fba618d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHw0fHxhYnN0cmFjdCUyMHZpbnlsJTIwcmVjb3JkJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzkxMjMyOTU3fDA&ixlib=rb-4.1.0&q=85",
+      "category": "Dashboard Empty State / Accent",
+      "description": "Smooth golden surface. Good for premium empty states or report covers."
+    }
+  ],
+  "instructions_to_main_agent": [
+    "You are building a B2B SaaS for Acorde (music rights administration). Do NOT make it look like a generic SaaS template.",
+    "Wipe existing standard Tailwind configuration colors and enforce the Black, Yellow (#FFD700), White palette in tailwind.config.js.",
+    "Dashboard must feel dense, precise, and financial. Use tabular-nums (JetBrains Mono) for all currency and percentage values (Admin fees).",
+    "Never use space grotesk, inter, or roboto for headings. Use Outfit.",
+    "Do not center-align tabular data; align currency/numbers to the right, and text to the left.",
+    "Forms for uploading Abramus files should have a dashed border dropzone with a Yellow hover state.",
+    "All interactive and key informational elements MUST include a data-testid attribute.",
+    "Do NOT use HTML <select> or <input type='date'>. Use Shadcn Select and Calendar components.",
+    "Since files are .js/.jsx, avoid TypeScript specific syntax and use standard React PropTypes or plain JS.",
+    "The login portal is the first impression: Use the provided vinyl image as a full-cover background with a dark overlay, and place the login card as a glassmorphism or solid black card with a 1px border.",
+    "Use JS files for Shadcn components, not TSX."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) ONLY where appropriate (e.g., sticky headers).",
+    "You MUST NOT apply universal transition. Eg: transition: all. Always add transitions for specific interactive elements.",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER use AI assistant Emoji characters like robot, brain, etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, and entrance animations.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Use sonner for toasts. Located in /app/frontend/src/components/ui/sonner.js."
+  ],
+  "GENERAL UI UX DESIGN GUIDELINES": [
+    "Maintain high contrast hierarchy. Primary action -> Yellow button. Secondary -> Outline border-white/20. Tertiary -> Ghost text-muted.",
+    "Provide clear feedback for file uploads (Geral, Editora, Autor CSV/XLSX). Use progress bars or Sonner toasts.",
+    "Dashboard charts should summarize total revenue processed vs admin fee collected. Use Recharts with yellow for revenue, white for admin fee.",
+    "In the Publisher portal, hide all references to 'taxa admin' as per requirements. Ensure role-based conditional rendering affects UI components directly.",
+    "DO NOT use complete transparent background in header, overlays, any surface that has content under it."
+  ]
+}

@@ -1,0 +1,5 @@
+/* Minimal overrides; main theme is in index.css */
+.App {
+  min-height: 100vh;
+  background: #050505;
+}
