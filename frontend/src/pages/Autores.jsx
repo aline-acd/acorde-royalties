@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Pencil, Trash2, Plus, Upload } from "lucide-react";
@@ -158,6 +158,9 @@ export default function Autores() {
         <DialogContent className="bg-[#0a0a0a] border-[#1f1f1f] text-white rounded-sm">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{editing ? "Editar autor" : "Novo autor"}</DialogTitle>
+            <DialogDescription className="text-xs text-neutral-500">
+              O nome do autor precisa bater com a coluna NOME do relatório Autor Abramus para o cruzamento automático.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <Field label="Nome do autor (deve bater com o NOME do relatório Abramus)">

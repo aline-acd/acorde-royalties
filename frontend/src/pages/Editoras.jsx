@@ -3,7 +3,7 @@ import { api, formatApiError, formatPct } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Pencil, Trash2, Plus, Upload, KeyRound } from "lucide-react";
 
@@ -151,6 +151,9 @@ export default function Editoras() {
         <DialogContent className="bg-[#0a0a0a] border-[#1f1f1f] text-white rounded-sm">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">{editing ? "Editar editora" : "Nova editora"}</DialogTitle>
+            <DialogDescription className="text-xs text-neutral-500">
+              O nome da editora precisa ser idêntico ao campo TITULAR dos relatórios Abramus para o casamento automático dos dados.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <Field label="Nome (deve bater com o TITULAR dos relatórios Abramus)">
@@ -177,6 +180,9 @@ export default function Editoras() {
         <DialogContent className="bg-[#0a0a0a] border-[#1f1f1f] text-white rounded-sm">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">Criar login — {loginEditora?.name}</DialogTitle>
+            <DialogDescription className="text-xs text-neutral-500">
+              A editora acessará um portal próprio e visualizará somente seus próprios autores e relatórios.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <Field label="Email de login">

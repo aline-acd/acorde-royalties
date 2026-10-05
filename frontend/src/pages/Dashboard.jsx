@@ -97,7 +97,7 @@ export default function Dashboard() {
               <p className="text-xs text-neutral-500 mt-1">Soma do VL_AUTOR por plataforma (SPOTIFY, YOUTUBE, AMAZON...)</p>
             </div>
           </div>
-          <div className="h-72">
+          <div className="h-72 min-h-[280px]">
             {loading ? (
               <div className="flex items-center justify-center h-full text-neutral-500 text-sm">Carregando...</div>
             ) : (data?.por_fonte || []).length === 0 ? (

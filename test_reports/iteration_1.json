@@ -1,0 +1,43 @@
+{
+  "summary": "First testing run on Acorde royalties app. 21/21 backend pytest tests passed (auth, editoras CRUD, autores CRUD, uploads list, dashboard summary, competencias, editora/autor JSON+PDF reports, full editora-scope RBAC). Frontend e2e via Playwright: admin login, dashboard KPIs with real data, chart 'Receita por fonte', uploads history with 3 pre-seeded uploads, editoras list showing ADRIEL + create new, autores list with filter, Reports page (both tabs) with summary cards, PDF downloads for both editora (24KB) and autor (14KB), autor view correctly hides Taxa Admin column, create editora login via key icon, logout and login as editora user succeeds with restricted sidebar (no Editoras/Uploads nav).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/dashboard/summary (role=editora)", "issue": "match_autor uses `titular_norm` against editora name, but autor rows store `titular` as autor name — so editora-scoped dashboard shows R$ 0 and empty por_fonte even when editora/autor have real revenue. Reports page is unaffected and works correctly."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Editora-user dashboard", "issue": "After logging in as editora, Dashboard shows 'Valor Autor Bruto R$ 0,00' and 'Linhas processadas 0' because the backend scoping query uses titular_norm (editora name) against autor rows that store autor name. Chart stays 'Carregando...'.", "affected_selectors": ["kpi-total-autor"]}
+    ],
+    "design_issues": [
+      {"screen": "Dashboard (chart container)", "issues": ["Recharts emits 'width(-1) and height(-1) should be greater than 0' warnings on initial mount — add a min-height to the ResponsiveContainer or wait for layout before rendering."]},
+      {"screen": "Dialogs (new editora / new editora login)", "issues": ["Radix Dialog warning: 'Missing Description or aria-describedby for DialogContent' — add <DialogDescription> for accessibility."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix editora-scoped dashboard aggregation in /api/dashboard/summary: for role=editora, filter autor rows by matching to the autores belonging to that editora (e.g., using autor name_norm set or editora_id link) instead of titular_norm = editora name.",
+    "Add DialogDescription (or aria-describedby) to every DialogContent to silence a11y warnings.",
+    "Guard Recharts ResponsiveContainer with explicit min-height to avoid width/height -1 warnings on first render."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~770 lines and is approaching the 700-line split threshold — consider splitting into routers/editoras.py, routers/autores.py, routers/reports.py, routers/uploads.py.",
+    "login cookie uses samesite=none + secure=true (OK for cross-origin preview) but there is NO rate limit / brute-force lockout on /api/auth/login — add 5-attempt lockout as per playbook.",
+    "CORS_ORIGINS defaults to '*' with allow_credentials=True — browsers reject credentialed CORS with wildcard. Works in current test because the frontend uses Bearer token header too, but setting explicit origins is strongly recommended.",
+    "/api/editoras/{id}/login endpoint takes editora_id both in path and body (EditoraLoginIn.editora_id); redundant and allows mismatch — ignore body field.",
+    "AutorIn allows editora_id as free string; no validation that the ObjectId exists. Same for AutorPatch.",
+    "parse_editora_xlsx and parse_autor_xlsx error paths are not surfaced to user — malformed files silently return [] and still create an upload with 0 rows.",
+    "Admin seeding is idempotent and rotates password (good), but no index on users.editora_id — add it since /api/editoras/{id}/login looks up by email only (ok) but future queries may need it.",
+    "Dashboard editora-scope bug (see minor backend issue): autor-row aggregation keyed on wrong field."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100%", "frontend": "100% of critical flows"},
+  "test_credentials": "admin aline@acordemusica.com.br / acorde2026 (seeded). Created during tests: editora login editora_ui_<ts>@test.com / EditoraUI123! for ADRIEL MUSIC LTDA.",
+  "seed_data_creation": "Created a few TEST_* editoras/autores during CRUD tests, all cleaned up except TEST_UI_ED_<ts> and TEST_OTHER_ED (left for next-iteration inspection; safe to delete).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression lives at /app/backend/tests/backend_test.py (pytest, 21 tests). Rerun with: pytest /app/backend/tests/ -v. Known fix target: editora-scoped dashboard aggregation. Reports route is /relatorios (not /reports). Playwright must use expect_download for PDF buttons. Create-editora dialog testids: new-editora-btn → editora-name/cnpj/taxa → save-editora. Editora login dialog opens from key icon [data-testid^='login-editora-']: editora-login-email/password → save-editora-login.",
+  "rca of the issue": "Editora dashboard shows 0 because /api/dashboard/summary line ~701 sets match_autor['titular_norm'] = editora['name_norm']. Autor rows (type='autor') have titular/titular_norm populated as the AUTHOR name (not the editora). Fix: resolve autor_name_norm set for the editora (either query db.autores where editora_id = user.editora_id → collect name_norm list → match_autor['nome_norm'] = {'$in': list}) OR store editora_norm on autor rows during parse."
+}
