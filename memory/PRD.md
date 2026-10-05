@@ -46,15 +46,23 @@ login individual para cada editora.
 - Upload de .zip/.csv/.xlsx para os 3 tipos de relatório Abramus.
 - Parsers normalizam valores BR e armazenam linhas em `royalty_rows` com
   `titular_norm`/`nome_norm` para casamento.
-- CRUD completo + importação CSV para editoras e autores.
+- CRUD completo + importação CSV para editoras e autores (com e-mail).
 - Criação de login para editora (gera user role=editora com editora_id).
 - Dashboard admin com KPIs (valor total geral/editora/autor) + chart por
   fonte + top editoras.
 - Dashboard editora com escopo restrito.
 - Visualização e PDF de relatório Editora (com taxa admin).
 - Visualização e PDF de relatório Autor (sem taxa admin, só valor líquido).
+- **Logo Acorde no PDF** (versão com fundo transparente embutida no header).
+- **Exportação em lote**: ZIP de PDFs por escopo (editora|autor|both) por competência.
+- **Trava de repasse**: por editora/autor+competência, com status pago/pendente,
+  valor, observação, data_pagamento e histórico (últimos 50 eventos).
+- **Envio automático por e-mail**: integração Resend gerenciada pela Emergent,
+  dispara notificação com link para o portal para editoras e/ou autores com
+  e-mail cadastrado. Templates HTML com guardrails de segurança (sem forms,
+  sem pedidos de credencial, URLs https-only).
 - Design preto/amarelo/branco (Outfit + Manrope + JetBrains Mono).
-- 21/21 testes backend pytest passando; frontend validado via Playwright.
+- Testes: iter 1 = 21/21 backend; iter 2 = 39/39 backend; frontend validado.
 
 ## Backlog / Next
 P0:

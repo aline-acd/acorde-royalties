@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 2 testing (Acorde Royalties): backend 39/39 pytest passing (18 new tests added for repasses CRUD+history, bulk ZIP PDFs for scope=editora|autor|both, notifications via Resend proxy, mailer _assert_safe_email guard rails, and editora-scope RBAC on all new endpoints). Frontend e2e (Playwright): admin login OK; Relatórios page shows all 4 new buttons with correct testids (bulk-zip-editoras, bulk-zip-autores, bulk-zip-both, open-notifications); bulk-zip-both and open-notifications correctly stay disabled while 'Todas as competências' is selected and become enabled after choosing '2026 - SETEMBRO'. Repasse widget renders after loading an editora report (repasse-valor-editora, repasse-obs-editora, repasse-toggle-editora all present) and toggling pendente↔pago fires API call. Notifications dialog opens, firing to editoras returned 'Enviados: 1, Sem e-mail: 2, Erros: 0' confirming Resend proxy sends to delivered@resend.dev (ADRIEL). Autores page: new autor dialog contains data-testid 'autor-email' field.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/dashboard/summary (role=editora)", "issue": "Carryover from iter 1 — editora-scope dashboard aggregation reportedly works per main agent (DB confirmed titular_norm matches). Not re-verified in this run; code at ~L740 still uses titular_norm match."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Autores list", "issues": ["Admin should see email column in table — not verified visible ('E-mail' / 'Email' header text not found in admin autores list body). The autor-email input exists in the create dialog, but table column may still be missing or using a different label."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Verify Autores table shows an email column for admin role (feature spec says 'shows email column in table for admin'). The create/edit input is in place; the table column may be missing or labelled differently.",
+    "(Carryover) Confirm or fix editora-scoped /api/dashboard/summary autor-row aggregation — current code still keys on titular_norm."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1037 lines — well past the 700-line split threshold. Split into routers/{auth,editoras,autores,uploads,reports,repasses,notifications}.py.",
+    "/api/notifications/send trusts request.headers['origin'] as frontend_origin fallback — an attacker-controlled Origin header could land in notification emails. Prefer FRONTEND_URL env only, or whitelist.",
+    "repasses upsert uses Mongo find_one on (scope, scope_id, competencia) but relies on unique index declared at startup — concurrent requests between find_one and insert could still race; use upsert=True with $setOnInsert for created_at.",
+    "Email guard _assert_safe_email runs at send time only — add a unit test around build_editora/autor_email_html output so content regressions are caught.",
+    "Bulk ZIP endpoint iterates ALL editoras/autores and generates PDFs sequentially inside the request — for large tenants this will block the event loop and exceed proxy timeouts. Consider streaming or a background job for >50 PDFs.",
+    "Still no brute-force lockout on /api/auth/login (carryover from iter 1 playbook check)."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (39/39)", "frontend": "100% of critical iter-2 flows"},
+  "test_credentials": "admin aline@acordemusica.com.br / acorde2026 (seeded). Editora login created during tests: editora_adriel_iter2@example.com / EditoraPass123! (and iter 1 editora_adriel_test@example.com remains).",
+  "seed_data_creation": "Tests create/delete TEST_EDITORA_X and TEST_AUTOR_A (cleaned up). Repasses created for ADRIEL editora + first autor on competencia '2026 - SETEMBRO' remain in DB (idempotent upsert, safe to leave). Editora ADRIEL email left as delivered@resend.dev as per setup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression suite: /app/backend/tests/backend_test.py (pytest, 39 tests). Run: pytest /app/backend/tests/ -v. All iter-2 endpoints are green. For the autores email-column check, inspect /app/frontend/src/pages/Autores.jsx table head cells. Notifications integration against Resend proxy works with 'delivered@resend.dev' (ADRIEL MUSIC LTDA) — do not change that email. Repasse testids are repasse-{valor,obs,toggle}-{editora|autor}; the widget appears only after a report is loaded.",
+  "rca of the issue": "N/A — no critical bugs this iteration. Minor design gap: autor email column visibility in table needs confirmation."
+}

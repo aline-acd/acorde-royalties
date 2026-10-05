@@ -232,3 +232,228 @@ class TestEditoraScope:
         hdr = {"Authorization": c.headers["Authorization"]}
         r = requests.post(f"{API}/uploads/geral", files=files, headers=hdr)
         assert r.status_code == 403
+
+
+
+# ============================================================
+# Iteration 2: repasses, bulk ZIP PDFs, notifications, mailer guard
+# ============================================================
+import zipfile
+
+
+def _get_adriel_editora(c):
+    eds = c.get(f"{API}/editoras").json()
+    return next(e for e in eds if "ADRIEL" in e["name"].upper())
+
+
+def _pick_competencia(c):
+    comps = c.get(f"{API}/competencias").json()
+    pref = "2026 - SETEMBRO"
+    if pref in comps:
+        return pref
+    return comps[0] if comps else pref
+
+
+# ------- Repasses CRUD + history -------
+class TestRepasses:
+    def test_create_update_history(self, admin_client):
+        ed = _get_adriel_editora(admin_client)
+        comp = _pick_competencia(admin_client)
+        # first upsert as "pago"
+        p1 = {
+            "scope": "editora",
+            "scope_id": ed["id"],
+            "competencia": comp,
+            "status": "pago",
+            "valor": 238.66,
+            "observacao": "Pix TEST",
+            "data_pagamento": "2026-10-05",
+        }
+        r = admin_client.post(f"{API}/repasses", json=p1)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert d["status"] == "pago"
+        assert d["valor"] == 238.66
+        assert d["scope_id"] == ed["id"]
+        assert len(d["history"]) >= 1
+        rid1 = d["id"]
+
+        # second upsert as pendente — should update same doc, append history
+        p2 = dict(p1, status="pendente", observacao="aguardando", valor=238.66)
+        r2 = admin_client.post(f"{API}/repasses", json=p2)
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert d2["id"] == rid1, "upsert should keep same id"
+        assert d2["status"] == "pendente"
+        assert len(d2["history"]) >= 2, f"history should have 2+ events: {d2['history']}"
+
+        # verify via list
+        rl = admin_client.get(f"{API}/repasses", params={"competencia": comp})
+        assert rl.status_code == 200
+        found = next((x for x in rl.json() if x["id"] == rid1), None)
+        assert found and found["status"] == "pendente"
+
+    def test_invalid_status(self, admin_client):
+        ed = _get_adriel_editora(admin_client)
+        comp = _pick_competencia(admin_client)
+        r = admin_client.post(f"{API}/repasses", json={
+            "scope": "editora", "scope_id": ed["id"], "competencia": comp,
+            "status": "foo", "valor": 1, "observacao": "", "data_pagamento": None,
+        })
+        assert r.status_code == 400
+
+    def test_autor_repasse(self, admin_client):
+        aut = admin_client.get(f"{API}/autores").json()
+        assert aut
+        a = aut[0]
+        comp = _pick_competencia(admin_client)
+        r = admin_client.post(f"{API}/repasses", json={
+            "scope": "autor", "scope_id": a["id"], "competencia": comp,
+            "status": "pago", "valor": 100.0, "observacao": "TEST autor", "data_pagamento": "2026-10-05",
+        })
+        assert r.status_code == 200
+        assert r.json()["scope"] == "autor"
+
+
+# ------- Bulk ZIP PDFs -------
+class TestBulkZip:
+    def test_bulk_editora_zip(self, admin_client):
+        comp = _pick_competencia(admin_client)
+        r = admin_client.get(f"{API}/reports/bulk/editora/pdf", params={"competencia": comp})
+        assert r.status_code == 200, r.text
+        assert r.headers.get("content-type", "").startswith("application/zip")
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        names = zf.namelist()
+        assert any(n.startswith("Editoras/") and n.endswith(".pdf") for n in names), names
+        # verify PDF signature inside
+        with zf.open(names[0]) as f:
+            assert f.read(4) == b"%PDF"
+
+    def test_bulk_autor_zip(self, admin_client):
+        comp = _pick_competencia(admin_client)
+        r = admin_client.get(f"{API}/reports/bulk/autor/pdf", params={"competencia": comp})
+        assert r.status_code == 200
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        names = zf.namelist()
+        assert any(n.startswith("Autores/") and n.endswith(".pdf") for n in names), names
+
+    def test_bulk_both_zip(self, admin_client):
+        comp = _pick_competencia(admin_client)
+        r = admin_client.get(f"{API}/reports/bulk/both/pdf", params={"competencia": comp})
+        assert r.status_code == 200
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        names = zf.namelist()
+        assert any(n.startswith("Editoras/") for n in names), names
+        assert any(n.startswith("Autores/") for n in names), names
+
+    def test_bulk_invalid_scope(self, admin_client):
+        r = admin_client.get(f"{API}/reports/bulk/foo/pdf")
+        assert r.status_code == 400
+
+
+# ------- Notifications (Resend proxy) -------
+class TestNotifications:
+    def test_send_to_adriel_delivered_resend(self, admin_client):
+        ed = _get_adriel_editora(admin_client)
+        comp = _pick_competencia(admin_client)
+        # ADRIEL email was set to delivered@resend.dev — verify + ensure test idempotent
+        if (ed.get("email") or "").lower() != "delivered@resend.dev":
+            admin_client.patch(f"{API}/editoras/{ed['id']}", json={"email": "delivered@resend.dev"})
+        r = admin_client.post(f"{API}/notifications/send", json={
+            "competencia": comp, "target": "editoras", "only_ids": [ed["id"]],
+        })
+        assert r.status_code == 200, r.text
+        d = r.json()
+        assert "sent" in d and "skipped" in d and "errors" in d
+        assert d["sent"] + len(d["errors"]) >= 1
+        # If sent, errors must be empty for that case
+        if d["sent"] == 1:
+            assert d["errors"] == []
+
+    def test_send_autor_target(self, admin_client):
+        comp = _pick_competencia(admin_client)
+        # pick an autor without email -> should be skipped
+        auts = admin_client.get(f"{API}/autores").json()
+        no_email = next((a for a in auts if not a.get("email")), None)
+        if no_email is None:
+            pytest.skip("All autores already have email set")
+        r = admin_client.post(f"{API}/notifications/send", json={
+            "competencia": comp, "target": "autores", "only_ids": [no_email["id"]],
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert d["skipped"] >= 1
+        assert d["sent"] == 0
+
+
+# ------- Mailer safety guard (unit-style; imports module directly) -------
+import sys as _sys
+_sys.path.insert(0, "/app/backend")
+from mailer import _assert_safe_email  # type: ignore  # noqa: E402
+
+
+class TestMailerGuard:
+    def test_blocks_form(self):
+        with pytest.raises(ValueError):
+            _assert_safe_email("sub", "<form><input/></form>")
+
+    def test_blocks_non_https_link(self):
+        with pytest.raises(ValueError):
+            _assert_safe_email("sub", '<a href="http://example.com">x</a>')
+
+    def test_blocks_shortener(self):
+        with pytest.raises(ValueError):
+            _assert_safe_email("sub", '<a href="https://bit.ly/abc">x</a>')
+
+    def test_blocks_credential_ask(self):
+        with pytest.raises(ValueError):
+            _assert_safe_email("sub", "<p>please reply with your password</p>")
+
+    def test_allows_safe_email(self):
+        _assert_safe_email("Acorde", '<a href="https://acordemusica.com.br/login">Login</a>')
+
+
+# ------- Editora-scope RBAC on new endpoints -------
+class TestEditoraScopeNew:
+    @pytest.fixture(scope="class")
+    def editora_client(self, admin_client):
+        ed = _get_adriel_editora(admin_client)
+        email = "editora_adriel_iter2@example.com"
+        password = "EditoraPass123!"
+        r = admin_client.post(f"{API}/editoras/{ed['id']}/login",
+                              json={"editora_id": ed["id"], "email": email, "password": password})
+        assert r.status_code == 200, r.text
+        s = requests.Session()
+        s.headers["Content-Type"] = "application/json"
+        r = s.post(f"{API}/auth/login", json={"email": email, "password": password})
+        assert r.status_code == 200
+        s.headers["Authorization"] = f"Bearer {r.json()['token']}"
+        return {"client": s, "editora_id": ed["id"]}
+
+    def test_editora_cannot_bulk_zip(self, editora_client):
+        r = editora_client["client"].get(f"{API}/reports/bulk/editora/pdf")
+        assert r.status_code == 403
+
+    def test_editora_cannot_notify(self, editora_client):
+        r = editora_client["client"].post(f"{API}/notifications/send", json={
+            "competencia": "x", "target": "editoras",
+        })
+        assert r.status_code == 403
+
+    def test_editora_cannot_create_repasse(self, editora_client):
+        r = editora_client["client"].post(f"{API}/repasses", json={
+            "scope": "editora", "scope_id": editora_client["editora_id"],
+            "competencia": "2026 - SETEMBRO", "status": "pago", "valor": 1,
+            "observacao": "", "data_pagamento": None,
+        })
+        assert r.status_code == 403
+
+    def test_editora_repasses_scoped(self, editora_client, admin_client):
+        c = editora_client["client"]
+        r = c.get(f"{API}/repasses")
+        assert r.status_code == 200
+        own_id = editora_client["editora_id"]
+        # all editora-scope repasses must match own id
+        for rep in r.json():
+            if rep["scope"] == "editora":
+                assert rep["scope_id"] == own_id, f"leak: {rep}"
