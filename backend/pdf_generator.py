@@ -4,11 +4,14 @@ Design: Black header + yellow accent bar + white body. Simple, dense tables,
 tabular numeric data.
 """
 import io
+import os
+from pathlib import Path
 from datetime import datetime, timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
@@ -62,11 +65,22 @@ def _p(text, right=False):
     return Paragraph(text, _cell_style_right() if right else _cell_style())
 
 
-ACORDE_BLACK = colors.HexColor("#050505")
+ACORDE_BLACK = colors.HexColor("#000000")
+ACORDE_SURFACE = colors.HexColor("#070707")
 ACORDE_YELLOW = colors.HexColor("#FFD700")
 ACORDE_WHITE = colors.HexColor("#FFFFFF")
 ACORDE_GREY = colors.HexColor("#DDDDDD")
 ACORDE_MUTED = colors.HexColor("#666666")
+
+_LOGO_PATH = Path(__file__).parent / "assets" / "acorde_logo_transparent.png"
+_LOGO = None
+
+
+def _logo():
+    global _LOGO
+    if _LOGO is None and _LOGO_PATH.exists():
+        _LOGO = ImageReader(str(_LOGO_PATH))
+    return _LOGO
 
 
 def _money(v) -> str:
@@ -91,26 +105,41 @@ def _pct(v) -> str:
 def _header_footer(canvas, doc, title: str, subtitle: str):
     width, height = doc.pagesize
     canvas.saveState()
-    # Black header band
+    # Black header band (deeper so logo breathes)
+    header_h = 26 * mm
     canvas.setFillColor(ACORDE_BLACK)
-    canvas.rect(0, height - 22 * mm, width, 22 * mm, fill=1, stroke=0)
+    canvas.rect(0, height - header_h, width, header_h, fill=1, stroke=0)
     # Yellow accent bar
     canvas.setFillColor(ACORDE_YELLOW)
-    canvas.rect(0, height - 24 * mm, width, 2 * mm, fill=1, stroke=0)
-    # Brand
-    canvas.setFillColor(ACORDE_YELLOW)
-    canvas.setFont("Helvetica-Bold", 18)
-    canvas.drawString(15 * mm, height - 13 * mm, "ACORDE")
-    canvas.setFillColor(ACORDE_WHITE)
-    canvas.setFont("Helvetica", 8)
-    canvas.drawString(15 * mm, height - 18 * mm, "Administradora de Direitos Autorais")
+    canvas.rect(0, height - header_h - 2 * mm, width, 2 * mm, fill=1, stroke=0)
+    # Logo (centered vertically in header band)
+    logo = _logo()
+    if logo is not None:
+        try:
+            canvas.drawImage(
+                logo,
+                12 * mm,
+                height - header_h + 3 * mm,
+                width=48 * mm,
+                height=20 * mm,
+                mask="auto",
+                preserveAspectRatio=True,
+            )
+        except Exception:
+            canvas.setFillColor(ACORDE_YELLOW)
+            canvas.setFont("Helvetica-Bold", 20)
+            canvas.drawString(15 * mm, height - 15 * mm, "ACORDE")
+    else:
+        canvas.setFillColor(ACORDE_YELLOW)
+        canvas.setFont("Helvetica-Bold", 20)
+        canvas.drawString(15 * mm, height - 15 * mm, "ACORDE")
     # Title right
     canvas.setFillColor(ACORDE_WHITE)
-    canvas.setFont("Helvetica-Bold", 10)
-    canvas.drawRightString(width - 15 * mm, height - 11 * mm, title)
+    canvas.setFont("Helvetica-Bold", 11)
+    canvas.drawRightString(width - 15 * mm, height - 12 * mm, title)
     canvas.setFillColor(ACORDE_YELLOW)
     canvas.setFont("Helvetica", 8)
-    canvas.drawRightString(width - 15 * mm, height - 17 * mm, subtitle)
+    canvas.drawRightString(width - 15 * mm, height - 18 * mm, subtitle)
     # Footer
     canvas.setFillColor(ACORDE_BLACK)
     canvas.rect(0, 0, width, 10 * mm, fill=1, stroke=0)
@@ -121,7 +150,7 @@ def _header_footer(canvas, doc, title: str, subtitle: str):
     canvas.drawString(
         15 * mm,
         4 * mm,
-        f"Emitido em {datetime.now(timezone.utc).astimezone().strftime('%d/%m/%Y %H:%M')} • Acorde Music Rights",
+        f"Emitido em {datetime.now(timezone.utc).astimezone().strftime('%d/%m/%Y %H:%M')} • Acorde Music Rights • Compondo Negócios",
     )
     canvas.drawRightString(width - 15 * mm, 4 * mm, f"Página {doc.page}")
     canvas.restoreState()
@@ -231,7 +260,7 @@ def generate_editora_pdf(
     doc = SimpleDocTemplate(
         buf,
         pagesize=landscape(A4),
-        topMargin=30 * mm,
+        topMargin=35 * mm,
         bottomMargin=15 * mm,
         leftMargin=12 * mm,
         rightMargin=12 * mm,
@@ -327,7 +356,7 @@ def generate_autor_pdf(
     doc = SimpleDocTemplate(
         buf,
         pagesize=landscape(A4),
-        topMargin=30 * mm,
+        topMargin=35 * mm,
         bottomMargin=15 * mm,
         leftMargin=12 * mm,
         rightMargin=12 * mm,

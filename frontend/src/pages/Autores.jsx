@@ -17,7 +17,7 @@ export default function Autores() {
   const [filterEditora, setFilterEditora] = useState("__all__");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: "", editora_id: "", admin_fee_percent: 0 });
+  const [form, setForm] = useState({ name: "", editora_id: "", admin_fee_percent: 0, email: "" });
   const bulkRef = useRef(null);
 
   async function refresh() {
@@ -33,12 +33,12 @@ export default function Autores() {
 
   function openNew() {
     setEditing(null);
-    setForm({ name: "", editora_id: filterEditora !== "__all__" ? filterEditora : "", admin_fee_percent: 0 });
+    setForm({ name: "", editora_id: filterEditora !== "__all__" ? filterEditora : "", admin_fee_percent: 0, email: "" });
     setOpen(true);
   }
   function openEdit(a) {
     setEditing(a);
-    setForm({ name: a.name, editora_id: a.editora_id || "", admin_fee_percent: a.admin_fee_percent || 0 });
+    setForm({ name: a.name, editora_id: a.editora_id || "", admin_fee_percent: a.admin_fee_percent || 0, email: a.email || "" });
     setOpen(true);
   }
 
@@ -119,18 +119,20 @@ export default function Autores() {
             <tr>
               <th className="text-left px-4 py-3">Autor</th>
               <th className="text-left px-4 py-3">Editora</th>
+              {isAdmin && <th className="text-left px-4 py-3">E-mail</th>}
               {isAdmin && <th className="text-right px-4 py-3">Taxa Admin.</th>}
               {isAdmin && <th className="px-4 py-3"></th>}
             </tr>
           </thead>
           <tbody>
             {autores.length === 0 && (
-              <tr><td colSpan={isAdmin ? 4 : 2} className="text-center text-neutral-600 py-10">Nenhum autor.</td></tr>
+              <tr><td colSpan={isAdmin ? 5 : 2} className="text-center text-neutral-600 py-10">Nenhum autor.</td></tr>
             )}
             {autores.map((a) => (
               <tr key={a.id} className="border-t border-[#1a1a1a] hover:bg-[#0b0b0b]">
                 <td className="px-4 py-3 text-white">{a.name}</td>
                 <td className="px-4 py-3 text-neutral-400">{a.editora_name || "—"}</td>
+                {isAdmin && <td className="px-4 py-3 text-neutral-500 text-xs">{a.email || "—"}</td>}
                 {isAdmin && <td className="px-4 py-3 text-right mono text-[#FFD700]">{formatPct(a.admin_fee_percent)}</td>}
                 {isAdmin && (
                   <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -179,6 +181,9 @@ export default function Autores() {
             </Field>
             <Field label="Taxa administrativa (%) — não aparecerá no PDF do autor">
               <Input data-testid="autor-taxa" type="number" step="0.01" value={form.admin_fee_percent} onChange={(e) => setForm({ ...form, admin_fee_percent: e.target.value })} className="bg-[#0F0F11] border-[#222] rounded-sm mono" />
+            </Field>
+            <Field label="E-mail do autor (opcional — usado para envio das notificações)">
+              <Input data-testid="autor-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="bg-[#0F0F11] border-[#222] rounded-sm" />
             </Field>
           </div>
           <DialogFooter className="mt-6">

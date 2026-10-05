@@ -33,6 +33,9 @@ from parsers import (
     _norm,
 )
 from pdf_generator import generate_editora_pdf, generate_autor_pdf
+from mailer import send_email, build_editora_email_html, build_autor_email_html
+import zipfile
+import re
 
 
 # ------------------------------------------------------------------ DB
@@ -85,12 +88,30 @@ class AutorIn(BaseModel):
     name: str
     editora_id: Optional[str] = None
     admin_fee_percent: float = 0.0
+    email: Optional[str] = ""
 
 
 class AutorPatch(BaseModel):
     name: Optional[str] = None
     editora_id: Optional[str] = None
     admin_fee_percent: Optional[float] = None
+    email: Optional[str] = None
+
+
+class RepasseIn(BaseModel):
+    scope: str  # 'editora' or 'autor'
+    scope_id: str
+    competencia: str
+    status: str  # 'pendente' or 'pago'
+    valor: float = 0.0
+    observacao: Optional[str] = ""
+    data_pagamento: Optional[str] = None  # ISO date
+
+
+class SendNotificationsIn(BaseModel):
+    competencia: str
+    target: str = "editoras"  # 'editoras' or 'autores' or 'both'
+    only_ids: Optional[list[str]] = None  # if provided, send only to these ids
 
 
 # ------------------------------------------------------------- Startup
@@ -106,6 +127,7 @@ async def _startup():
     await db.royalty_rows.create_index("editora_norm")
     await db.royalty_rows.create_index("nome_norm")
     await db.uploads.create_index("uploaded_at")
+    await db.repasses.create_index([("scope", 1), ("scope_id", 1), ("competencia", 1)], unique=True)
 
     # seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "aline@acordemusica.com.br").lower()
@@ -323,6 +345,7 @@ def _dump_autor(doc, editora_name=""):
         "editora_id": doc.get("editora_id"),
         "editora_name": editora_name,
         "admin_fee_percent": doc.get("admin_fee_percent", 0.0),
+        "email": doc.get("email", ""),
         "created_at": doc.get("created_at"),
     }
 
@@ -357,6 +380,7 @@ async def create_autor(payload: AutorIn, request: Request):
         "name_norm": _norm(name),
         "editora_id": payload.editora_id,
         "admin_fee_percent": float(payload.admin_fee_percent or 0),
+        "email": (payload.email or "").lower().strip(),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
@@ -374,6 +398,8 @@ async def update_autor(autor_id: str, payload: AutorPatch, request: Request):
     updates = {k: v for k, v in payload.model_dump(exclude_none=True).items()}
     if "name" in updates:
         updates["name_norm"] = _norm(updates["name"])
+    if "email" in updates:
+        updates["email"] = (updates["email"] or "").lower().strip()
     await db.autores.update_one({"_id": ObjectId(autor_id)}, {"$set": updates})
     doc = await db.autores.find_one({"_id": ObjectId(autor_id)})
     return _dump_autor(doc)
@@ -758,6 +784,242 @@ async def dashboard_summary(request: Request, competencia: Optional[str] = None)
         "por_fonte": [{"fonte": p["_id"] or "—", "total": round(p["total"], 2), "count": p["count"]} for p in por_fonte],
         "top_editoras": [{"titular": t["_id"] or "—", "total": round(t["total"], 2)} for t in top_editoras],
     }
+
+
+# -------------------------------------------------------- Repasses
+
+def _dump_repasse(doc):
+    return {
+        "id": str(doc["_id"]),
+        "scope": doc["scope"],
+        "scope_id": doc["scope_id"],
+        "competencia": doc["competencia"],
+        "status": doc["status"],
+        "valor": doc.get("valor", 0),
+        "observacao": doc.get("observacao", ""),
+        "data_pagamento": doc.get("data_pagamento"),
+        "updated_at": doc.get("updated_at"),
+        "history": doc.get("history", []),
+    }
+
+
+async def _check_repasse_scope(user, scope, scope_id):
+    if user["role"] != "editora":
+        return
+    if scope == "editora" and scope_id != user.get("editora_id"):
+        raise HTTPException(403, "Sem acesso a este repasse")
+    if scope == "autor":
+        autor = await db.autores.find_one({"_id": ObjectId(scope_id)})
+        if not autor or autor.get("editora_id") != user.get("editora_id"):
+            raise HTTPException(403, "Sem acesso a este repasse")
+
+
+@api.get("/repasses")
+async def list_repasses(request: Request, competencia: Optional[str] = None, scope: Optional[str] = None):
+    user = await get_current_user(request)
+    q = {}
+    if competencia:
+        q["competencia"] = competencia
+    if scope:
+        q["scope"] = scope
+    if user["role"] == "editora":
+        autores = await db.autores.find({"editora_id": user["editora_id"]}, {"_id": 1}).to_list(5000)
+        autor_ids = [str(a["_id"]) for a in autores]
+        q["$or"] = [
+            {"scope": "editora", "scope_id": user["editora_id"]},
+            {"scope": "autor", "scope_id": {"$in": autor_ids}},
+        ]
+    docs = await db.repasses.find(q).sort("updated_at", -1).to_list(5000)
+    return [_dump_repasse(d) for d in docs]
+
+
+@api.post("/repasses")
+async def upsert_repasse(payload: RepasseIn, request: Request):
+    user = await get_current_user(request)
+    require_admin(user)
+    if payload.scope not in ("editora", "autor"):
+        raise HTTPException(400, "scope inválido")
+    if payload.status not in ("pendente", "pago"):
+        raise HTTPException(400, "status inválido")
+    now = datetime.now(timezone.utc).isoformat()
+    event = {
+        "status": payload.status,
+        "valor": float(payload.valor or 0),
+        "observacao": payload.observacao or "",
+        "data_pagamento": payload.data_pagamento,
+        "at": now,
+        "by": user["email"],
+    }
+    existing = await db.repasses.find_one(
+        {"scope": payload.scope, "scope_id": payload.scope_id, "competencia": payload.competencia}
+    )
+    if existing:
+        new_history = (existing.get("history") or []) + [event]
+        await db.repasses.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {
+                "status": payload.status,
+                "valor": event["valor"],
+                "observacao": event["observacao"],
+                "data_pagamento": payload.data_pagamento,
+                "updated_at": now,
+                "history": new_history[-50:],
+            }},
+        )
+        doc = await db.repasses.find_one({"_id": existing["_id"]})
+    else:
+        doc = {
+            "scope": payload.scope,
+            "scope_id": payload.scope_id,
+            "competencia": payload.competencia,
+            "status": payload.status,
+            "valor": event["valor"],
+            "observacao": event["observacao"],
+            "data_pagamento": payload.data_pagamento,
+            "created_at": now,
+            "updated_at": now,
+            "history": [event],
+        }
+        res = await db.repasses.insert_one(doc)
+        doc["_id"] = res.inserted_id
+    return _dump_repasse(doc)
+
+
+# --------------------------------------- Bulk PDF export (ZIP)
+
+def _safe_filename(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_\-]+", "_", (s or "sem_nome"))[:80]
+
+
+@api.get("/reports/bulk/{scope}/pdf")
+async def bulk_pdf_zip(scope: str, request: Request, competencia: Optional[str] = None):
+    """Return a ZIP containing all PDFs for the given scope (editora|autor|both)
+    optionally filtered by competencia. Admin only."""
+    user = await get_current_user(request)
+    require_admin(user)
+    if scope not in ("editora", "autor", "both"):
+        raise HTTPException(400, "scope inválido")
+
+    buf = io.BytesIO()
+    files_count = 0
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        if scope in ("editora", "both"):
+            editoras = await db.editoras.find({}).to_list(5000)
+            for e in editoras:
+                data = await _editora_report(str(e["_id"]), competencia)
+                if not data["rows"]:
+                    continue
+                pdf = generate_editora_pdf(
+                    editora_name=data["editora"]["name"],
+                    cnpj=data["editora"].get("cnpj", ""),
+                    competencia=data["competencia"],
+                    admin_fee_percent=data["editora"]["admin_fee_percent"],
+                    rows=data["rows"],
+                    totals=data["totals"],
+                )
+                fname = f"Editoras/Acorde_Editora_{_safe_filename(data['editora']['name'])}.pdf"
+                zf.writestr(fname, pdf)
+                files_count += 1
+
+        if scope in ("autor", "both"):
+            autores = await db.autores.find({}).to_list(10000)
+            for a in autores:
+                data = await _autor_report(str(a["_id"]), competencia)
+                if not data["rows"]:
+                    continue
+                pdf = generate_autor_pdf(
+                    autor_name=data["autor"]["name"],
+                    editora_name=data["autor"]["editora_name"],
+                    competencia=data["competencia"],
+                    rows=data["rows"],
+                    totals=data["totals"],
+                )
+                fname = f"Autores/Acorde_Autor_{_safe_filename(data['autor']['name'])}.pdf"
+                zf.writestr(fname, pdf)
+                files_count += 1
+
+    buf.seek(0)
+    if files_count == 0:
+        raise HTTPException(404, "Nenhum relatório encontrado para essa competência")
+    tag = _safe_filename(competencia or "todas")
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="Acorde_Relatorios_{scope}_{tag}.zip"',
+            "X-Files-Count": str(files_count),
+        },
+    )
+
+
+# ---------------------------------------------- Notificações por email
+
+@api.post("/notifications/send")
+async def send_notifications(payload: SendNotificationsIn, request: Request):
+    user = await get_current_user(request)
+    require_admin(user)
+
+    frontend_origin = os.environ.get("FRONTEND_URL") or (
+        request.headers.get("origin") or "https://acordemusica.com.br"
+    )
+    portal_login = f"{frontend_origin.rstrip('/')}/login"
+
+    results = {"sent": 0, "skipped": 0, "errors": []}
+
+    async def _send_editora_batch():
+        q = {}
+        if payload.only_ids:
+            q["_id"] = {"$in": [ObjectId(x) for x in payload.only_ids]}
+        editoras = await db.editoras.find(q).to_list(5000)
+        for e in editoras:
+            email = (e.get("email") or "").strip()
+            if not email:
+                results["skipped"] += 1
+                continue
+            html = build_editora_email_html(e["name"], payload.competencia, portal_login)
+            subject = f"Acorde • Relatório da competência {payload.competencia}"
+            try:
+                await send_email(to=email, subject=subject, html=html)
+                results["sent"] += 1
+                await db.editoras.update_one(
+                    {"_id": e["_id"]},
+                    {"$set": {"last_notification": {
+                        "competencia": payload.competencia,
+                        "at": datetime.now(timezone.utc).isoformat(),
+                    }}},
+                )
+            except Exception as ex:
+                results["errors"].append({"editora": e["name"], "error": str(ex)})
+
+    async def _send_autor_batch():
+        q = {}
+        if payload.only_ids:
+            q["_id"] = {"$in": [ObjectId(x) for x in payload.only_ids]}
+        autores = await db.autores.find(q).to_list(10000)
+        for a in autores:
+            email = (a.get("email") or "").strip()
+            if not email:
+                results["skipped"] += 1
+                continue
+            editora_name = ""
+            if a.get("editora_id"):
+                ed = await db.editoras.find_one({"_id": ObjectId(a["editora_id"])})
+                if ed:
+                    editora_name = ed["name"]
+            html = build_autor_email_html(a["name"], editora_name, payload.competencia, portal_login)
+            subject = f"Acorde • Seu relatório da competência {payload.competencia}"
+            try:
+                await send_email(to=email, subject=subject, html=html)
+                results["sent"] += 1
+            except Exception as ex:
+                results["errors"].append({"autor": a["name"], "error": str(ex)})
+
+    if payload.target in ("editoras", "both"):
+        await _send_editora_batch()
+    if payload.target in ("autores", "both"):
+        await _send_autor_batch()
+
+    return results
 
 
 @api.get("/")

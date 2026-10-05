@@ -4,8 +4,12 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Download, FileText } from "lucide-react";
+import { Download, Package, Mail, CheckCircle2, Clock } from "lucide-react";
 
 export default function Reports() {
   const { user } = useAuth();
@@ -20,6 +24,9 @@ export default function Reports() {
   const [reportEditora, setReportEditora] = useState(null);
   const [reportAutor, setReportAutor] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [repasses, setRepasses] = useState({});
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     api.get("/competencias").then((r) => setCompetencias(r.data || []));
@@ -29,6 +36,17 @@ export default function Reports() {
     });
     api.get("/autores").then((r) => setAutores(r.data || []));
   }, []);
+
+  useEffect(() => {
+    // reload repasses whenever competencia changes
+    api.get("/repasses", { params: competencia ? { competencia } : {} })
+      .then((r) => {
+        const map = {};
+        (r.data || []).forEach((it) => { map[`${it.scope}:${it.scope_id}:${it.competencia}`] = it; });
+        setRepasses(map);
+      })
+      .catch(() => {});
+  }, [competencia]);
 
   async function loadEditora() {
     if (!selectedEditora) return;
@@ -68,6 +86,50 @@ export default function Reports() {
     } catch (e) { toast.error(formatApiError(e)); }
   }
 
+  async function downloadBulkZip(scope) {
+    setBulkBusy(true);
+    try {
+      const path = `/reports/bulk/${scope}/pdf${competencia ? `?competencia=${encodeURIComponent(competencia)}` : ""}`;
+      const res = await api.get(path, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "application/zip" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `Acorde_Relatorios_${scope}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+      toast.success("ZIP gerado — baixado");
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function toggleRepasse(scope, scopeId, nextStatus, valor, observacao) {
+    if (!competencia) {
+      toast.error("Selecione uma competência para gravar o repasse");
+      return;
+    }
+    try {
+      const payload = {
+        scope,
+        scope_id: scopeId,
+        competencia,
+        status: nextStatus,
+        valor: Number(valor || 0),
+        observacao: observacao || "",
+        data_pagamento: nextStatus === "pago" ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const { data } = await api.post("/repasses", payload);
+      setRepasses({ ...repasses, [`${scope}:${scopeId}:${competencia}`]: data });
+      toast.success(`Repasse marcado como ${nextStatus === "pago" ? "PAGO" : "pendente"}`);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    }
+  }
+
   return (
     <div className="space-y-10">
       <div>
@@ -78,7 +140,7 @@ export default function Reports() {
         </p>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="text-xs uppercase tracking-[0.2em] text-neutral-500">Competência</div>
         <Select value={competencia || "__all__"} onValueChange={(v) => setCompetencia(v === "__all__" ? "" : v)}>
           <SelectTrigger data-testid="reports-competencia" className="w-64 h-10 bg-[#0F0F11] border-[#222] rounded-sm text-white">
@@ -89,6 +151,47 @@ export default function Reports() {
             {competencias.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
           </SelectContent>
         </Select>
+
+        {isAdmin && (
+          <div className="flex items-center gap-2 ml-auto">
+            <Button
+              data-testid="bulk-zip-editoras"
+              onClick={() => downloadBulkZip("editora")}
+              disabled={bulkBusy}
+              variant="outline"
+              className="h-10 border-[#2a2a2a] rounded-sm hover:border-[#FFD700] hover:text-[#FFD700] text-xs uppercase tracking-wider"
+            >
+              <Package className="w-4 h-4 mr-2" /> ZIP Editoras
+            </Button>
+            <Button
+              data-testid="bulk-zip-autores"
+              onClick={() => downloadBulkZip("autor")}
+              disabled={bulkBusy}
+              variant="outline"
+              className="h-10 border-[#2a2a2a] rounded-sm hover:border-[#FFD700] hover:text-[#FFD700] text-xs uppercase tracking-wider"
+            >
+              <Package className="w-4 h-4 mr-2" /> ZIP Autores
+            </Button>
+            <Button
+              data-testid="bulk-zip-both"
+              onClick={() => downloadBulkZip("both")}
+              disabled={bulkBusy || !competencia}
+              className="h-10 bg-[#FFD700] text-black hover:bg-[#FFE44D] rounded-sm text-xs uppercase tracking-wider font-semibold"
+              title={!competencia ? "Selecione uma competência" : ""}
+            >
+              <Package className="w-4 h-4 mr-2" /> {bulkBusy ? "Gerando..." : "ZIP Competência"}
+            </Button>
+            <Button
+              data-testid="open-notifications"
+              onClick={() => setNotifOpen(true)}
+              disabled={!competencia}
+              variant="outline"
+              className="h-10 border-[#2a2a2a] rounded-sm hover:border-[#FFD700] hover:text-[#FFD700] text-xs uppercase tracking-wider"
+            >
+              <Mail className="w-4 h-4 mr-2" /> Notificar
+            </Button>
+          </div>
+        )}
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -125,7 +228,21 @@ export default function Reports() {
           </div>
 
           {loading && <div className="text-neutral-500">Carregando...</div>}
-          {reportEditora && <EditoraReportView data={reportEditora} />}
+          {reportEditora && (
+            <>
+              <EditoraReportView data={reportEditora} />
+              {isAdmin && (
+                <RepasseWidget
+                  scope="editora"
+                  scopeId={reportEditora.editora.id}
+                  competencia={competencia}
+                  record={repasses[`editora:${reportEditora.editora.id}:${competencia}`]}
+                  defaultValor={reportEditora.totals.liquido}
+                  onToggle={toggleRepasse}
+                />
+              )}
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="autor" className="mt-6 space-y-6">
@@ -152,10 +269,206 @@ export default function Reports() {
           </div>
 
           {loading && <div className="text-neutral-500">Carregando...</div>}
-          {reportAutor && <AutorReportView data={reportAutor} />}
+          {reportAutor && (
+            <>
+              <AutorReportView data={reportAutor} />
+              {isAdmin && (
+                <RepasseWidget
+                  scope="autor"
+                  scopeId={reportAutor.autor.id}
+                  competencia={competencia}
+                  record={repasses[`autor:${reportAutor.autor.id}:${competencia}`]}
+                  defaultValor={reportAutor.totals.liquido}
+                  onToggle={toggleRepasse}
+                />
+              )}
+            </>
+          )}
         </TabsContent>
       </Tabs>
+
+      {isAdmin && (
+        <NotificationsDialog
+          open={notifOpen}
+          onClose={() => setNotifOpen(false)}
+          competencia={competencia}
+        />
+      )}
     </div>
+  );
+}
+
+function RepasseWidget({ scope, scopeId, competencia, record, defaultValor, onToggle }) {
+  const [valor, setValor] = useState(record?.valor ?? defaultValor ?? 0);
+  const [obs, setObs] = useState(record?.observacao || "");
+
+  useEffect(() => {
+    setValor(record?.valor ?? defaultValor ?? 0);
+    setObs(record?.observacao || "");
+  }, [record, defaultValor]);
+
+  const status = record?.status || "pendente";
+  const isPaid = status === "pago";
+
+  return (
+    <div className="bg-[#0a0a0a] border border-[#1f1f1f] rounded-sm p-6">
+      <div className="flex items-start justify-between gap-6 flex-wrap">
+        <div>
+          <div className="text-xs uppercase tracking-[0.3em] text-[#FFD700] mb-2">Repasse</div>
+          <div className="flex items-center gap-3">
+            {isPaid ? (
+              <span className="inline-flex items-center gap-2 bg-[#FFD700] text-black px-3 py-1 text-xs uppercase tracking-wider font-bold rounded-sm">
+                <CheckCircle2 className="w-4 h-4" /> Pago
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 border border-[#2a2a2a] text-neutral-400 px-3 py-1 text-xs uppercase tracking-wider rounded-sm">
+                <Clock className="w-4 h-4" /> Pendente
+              </span>
+            )}
+            {record?.data_pagamento && (
+              <span className="text-xs text-neutral-500 mono">
+                Pago em {new Date(record.data_pagamento).toLocaleDateString("pt-BR")}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-end gap-3 flex-wrap">
+          <div>
+            <Label className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 mb-1 block">Valor pago (R$)</Label>
+            <Input
+              data-testid={`repasse-valor-${scope}`}
+              type="number"
+              step="0.01"
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              className="h-10 w-36 bg-[#0F0F11] border-[#222] rounded-sm mono"
+            />
+          </div>
+          <div>
+            <Label className="text-[10px] uppercase tracking-[0.2em] text-neutral-500 mb-1 block">Observação</Label>
+            <Input
+              data-testid={`repasse-obs-${scope}`}
+              value={obs}
+              onChange={(e) => setObs(e.target.value)}
+              placeholder="Ex: Pix transferido"
+              className="h-10 w-64 bg-[#0F0F11] border-[#222] rounded-sm"
+            />
+          </div>
+          <Button
+            data-testid={`repasse-toggle-${scope}`}
+            onClick={() => onToggle(scope, scopeId, isPaid ? "pendente" : "pago", valor, obs)}
+            className={`h-10 rounded-sm uppercase tracking-wider font-semibold text-xs px-5 ${
+              isPaid
+                ? "bg-transparent border border-[#2a2a2a] text-neutral-300 hover:border-[#FFD700] hover:text-[#FFD700]"
+                : "bg-[#FFD700] text-black hover:bg-[#FFE44D]"
+            }`}
+          >
+            {isPaid ? "Marcar como pendente" : "Marcar como pago"}
+          </Button>
+        </div>
+      </div>
+      {record?.history?.length > 0 && (
+        <div className="mt-6 pt-5 border-t border-[#1a1a1a]">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-neutral-500 mb-3">Histórico</div>
+          <ul className="space-y-1.5 max-h-40 overflow-auto">
+            {record.history.slice().reverse().map((h, i) => (
+              <li key={i} className="flex items-center gap-3 text-xs text-neutral-400">
+                <span className="mono text-neutral-500">
+                  {new Date(h.at).toLocaleString("pt-BR")}
+                </span>
+                <span className={`px-2 py-0.5 rounded-sm ${h.status === "pago" ? "bg-[#FFD700]/15 text-[#FFD700]" : "border border-[#2a2a2a]"}`}>
+                  {h.status}
+                </span>
+                <span className="mono text-neutral-300">R$ {Number(h.valor || 0).toFixed(2)}</span>
+                {h.observacao && <span className="truncate">— {h.observacao}</span>}
+                <span className="text-neutral-600 text-[10px] ml-auto">por {h.by}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationsDialog({ open, onClose, competencia }) {
+  const [target, setTarget] = useState("editoras");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  async function send() {
+    setSending(true);
+    setResult(null);
+    try {
+      const { data } = await api.post("/notifications/send", {
+        competencia,
+        target,
+      });
+      setResult(data);
+      toast.success(`${data.sent} e-mails enviados`);
+    } catch (e) {
+      toast.error(formatApiError(e));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="bg-[#0a0a0a] border-[#1f1f1f] text-white rounded-sm max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold">Enviar notificações por e-mail</DialogTitle>
+          <DialogDescription className="text-xs text-neutral-500">
+            Dispara um e-mail com link para o portal da Acorde para cada destinatário com e-mail cadastrado. Competência: <span className="text-white">{competencia || "—"}</span>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 mt-2">
+          <div>
+            <Label className="text-xs uppercase tracking-[0.2em] text-neutral-500 mb-2 block">Enviar para</Label>
+            <Select value={target} onValueChange={setTarget}>
+              <SelectTrigger data-testid="notif-target" className="bg-[#0F0F11] border-[#222] rounded-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0F0F11] border-[#222] text-white">
+                <SelectItem value="editoras">Somente editoras</SelectItem>
+                <SelectItem value="autores">Somente autores</SelectItem>
+                <SelectItem value="both">Editoras + autores</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-neutral-500 leading-relaxed">
+            Para enviar, cada editora/autor precisa de um e-mail cadastrado no sistema. O e-mail não contém dados sensíveis — apenas um aviso e link para acessar o portal Acorde.
+          </p>
+          {result && (
+            <div className="border border-[#1f1f1f] rounded-sm p-4 bg-[#0F0F11]">
+              <div className="flex gap-6 mono text-sm">
+                <div><span className="text-[#FFD700]">Enviados:</span> {result.sent}</div>
+                <div><span className="text-neutral-500">Sem e-mail:</span> {result.skipped}</div>
+                <div><span className="text-red-400">Erros:</span> {result.errors?.length || 0}</div>
+              </div>
+              {result.errors?.length > 0 && (
+                <ul className="mt-3 space-y-1 text-xs text-red-400 max-h-24 overflow-auto">
+                  {result.errors.slice(0, 10).map((e, i) => (
+                    <li key={i}>• {e.editora || e.autor}: {e.error}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+        <DialogFooter className="mt-4">
+          <Button variant="ghost" onClick={onClose} className="text-neutral-400">Fechar</Button>
+          <Button
+            data-testid="send-notifications"
+            onClick={send}
+            disabled={sending || !competencia}
+            className="bg-[#FFD700] text-black hover:bg-[#FFE44D] rounded-sm"
+          >
+            {sending ? "Enviando..." : "Disparar e-mails"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
