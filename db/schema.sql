@@ -1,5 +1,8 @@
 -- Acorde Royalties — schema v1 (Postgres / Neon)
 -- Aplicar somente no branch acorde-portal-dev.
+-- Tudo fica no schema "royalties", isolado das tabelas já existentes no branch.
+CREATE SCHEMA IF NOT EXISTS royalties;
+SET search_path TO royalties;
 
 CREATE TABLE editoras (
   id                          bigserial PRIMARY KEY,
