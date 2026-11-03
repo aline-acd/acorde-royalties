@@ -3,10 +3,10 @@
 ## 1. Enviar o código ao GitHub (uma vez)
 No terminal, dentro da pasta `acorde-royalties`:
 ```
-git remote add origin https://github.com/ACORDE-Musica/acorde-royalties.git
+git remote add origin https://github.com/aline-acd/acorde-royalties.git
 git push -u origin main
 ```
-Se o GitHub pedir login, use sua conta com permissão na organização ACORDE-Musica.
+Se o GitHub pedir login, use a conta aline-acd.
 
 ## 2. Criar o branch de trabalho (uma vez)
 ```
