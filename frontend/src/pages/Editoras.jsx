@@ -1,26 +1,59 @@
 import { useEffect, useRef, useState } from "react";
-import { api, formatApiError, formatPct } from "@/lib/api";
+import { api, API, formatApiError, formatPct } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus, Upload, KeyRound } from "lucide-react";
+import { Pencil, Trash2, Plus, Upload, KeyRound, RefreshCw, FileDown, AlertCircle } from "lucide-react";
 
 export default function Editoras() {
   const [editoras, setEditoras] = useState([]);
+  const [filter, setFilter] = useState("all"); // all | pending | configured
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: "", cnpj: "", admin_fee_percent: 0, email: "" });
   const [loginEditora, setLoginEditora] = useState(null);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const bulkRef = useRef(null);
+  const [syncing, setSyncing] = useState(false);
 
   async function refresh() {
     const { data } = await api.get("/editoras");
     setEditoras(data || []);
   }
   useEffect(() => { refresh(); }, []);
+
+  async function syncFromReports() {
+    setSyncing(true);
+    try {
+      const { data } = await api.post("/discover/sync");
+      toast.success(`${data.new_editoras} editoras e ${data.new_autores} autores importados dos relatórios`);
+      refresh();
+    } catch (e) { toast.error(formatApiError(e)); } finally { setSyncing(false); }
+  }
+
+  async function downloadPendingCsv() {
+    try {
+      const res = await api.get("/discover/pending/editoras.csv", { responseType: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([res.data], { type: "text/csv" }));
+      a.download = "acorde_editoras_pendentes.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+      toast.success("CSV pendentes baixado");
+    } catch (e) { toast.error(formatApiError(e)); }
+  }
+
+  const visible = editoras.filter((e) => {
+    if (filter === "pending") return e.needs_review;
+    if (filter === "configured") return !e.needs_review;
+    return true;
+  });
+
+  const pendingCount = editoras.filter((e) => e.needs_review).length;
 
   function openNew() {
     setEditing(null);
@@ -89,9 +122,16 @@ export default function Editoras() {
           <h1 className="text-5xl font-extrabold leading-none">Editoras</h1>
           <p className="text-neutral-500 mt-3 text-sm max-w-2xl">
             Cadastre as editoras (clientes Acorde) e defina a taxa administrativa cobrada por cada uma.
+            Editoras encontradas nos relatórios Abramus são importadas automaticamente como <span className="text-[#FFD700]">pendentes</span>.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button data-testid="sync-reports-btn" variant="outline" disabled={syncing} onClick={syncFromReports} className="h-11 border-[#2a2a2a] rounded-sm hover:border-[#FFD700] hover:text-[#FFD700]">
+            <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} /> Sincronizar dos relatórios
+          </Button>
+          <Button data-testid="download-pending-editoras" variant="outline" onClick={downloadPendingCsv} className="h-11 border-[#2a2a2a] rounded-sm hover:border-[#FFD700] hover:text-[#FFD700]">
+            <FileDown className="w-4 h-4 mr-2" /> CSV pendentes
+          </Button>
           <input ref={bulkRef} type="file" className="hidden" accept=".csv" onChange={(e) => bulkCsv(e.target.files?.[0])} data-testid="bulk-editoras-file" />
           <Button data-testid="bulk-editoras-btn" variant="outline" className="h-11 border-[#2a2a2a] rounded-sm hover:border-[#FFD700] hover:text-[#FFD700]" onClick={() => bulkRef.current?.click()}>
             <Upload className="w-4 h-4 mr-2" /> Importar CSV
@@ -100,6 +140,31 @@ export default function Editoras() {
             <Plus className="w-4 h-4 mr-2" /> Nova editora
           </Button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setFilter("all")}
+          data-testid="filter-all"
+          className={`px-3 py-1.5 text-xs uppercase tracking-wider rounded-sm border ${filter === "all" ? "bg-[#FFD700] text-black border-[#FFD700]" : "border-[#2a2a2a] text-neutral-400 hover:border-[#FFD700] hover:text-[#FFD700]"}`}
+        >
+          Todas <span className="opacity-70 ml-1">({editoras.length})</span>
+        </button>
+        <button
+          onClick={() => setFilter("pending")}
+          data-testid="filter-pending"
+          className={`px-3 py-1.5 text-xs uppercase tracking-wider rounded-sm border inline-flex items-center gap-1.5 ${filter === "pending" ? "bg-[#FFD700] text-black border-[#FFD700]" : "border-[#2a2a2a] text-neutral-400 hover:border-[#FFD700] hover:text-[#FFD700]"}`}
+        >
+          <AlertCircle className="w-3.5 h-3.5" />
+          Pendentes <span className="opacity-70 ml-1">({pendingCount})</span>
+        </button>
+        <button
+          onClick={() => setFilter("configured")}
+          data-testid="filter-configured"
+          className={`px-3 py-1.5 text-xs uppercase tracking-wider rounded-sm border ${filter === "configured" ? "bg-[#FFD700] text-black border-[#FFD700]" : "border-[#2a2a2a] text-neutral-400 hover:border-[#FFD700] hover:text-[#FFD700]"}`}
+        >
+          Configuradas <span className="opacity-70 ml-1">({editoras.length - pendingCount})</span>
+        </button>
       </div>
 
       <div className="border border-[#1f1f1f] rounded-sm overflow-hidden">
@@ -114,12 +179,21 @@ export default function Editoras() {
             </tr>
           </thead>
           <tbody>
-            {editoras.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-neutral-600 py-10">Nenhuma editora cadastrada.</td></tr>
+            {visible.length === 0 && (
+              <tr><td colSpan={5} className="text-center text-neutral-600 py-10">Nenhuma editora.</td></tr>
             )}
-            {editoras.map((e) => (
+            {visible.map((e) => (
               <tr key={e.id} className="border-t border-[#1a1a1a] hover:bg-[#0b0b0b]">
-                <td className="px-4 py-3 text-white">{e.name}</td>
+                <td className="px-4 py-3 text-white">
+                  <div className="flex items-center gap-2">
+                    <span>{e.name}</span>
+                    {e.needs_review && (
+                      <span data-testid={`pending-badge-${e.id}`} className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider bg-[#FFD700]/15 text-[#FFD700] border border-[#FFD700]/30 px-2 py-0.5 rounded-sm">
+                        <AlertCircle className="w-3 h-3" /> Pendente
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-neutral-400 mono text-xs">{e.cnpj || "—"}</td>
                 <td className="px-4 py-3 text-right mono text-[#FFD700]">{formatPct(e.admin_fee_percent)}</td>
                 <td className="px-4 py-3 text-neutral-400 text-xs">

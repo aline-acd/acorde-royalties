@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus, Upload } from "lucide-react";
+import { Pencil, Trash2, Plus, Upload, RefreshCw, FileDown, AlertCircle } from "lucide-react";
 
 export default function Autores() {
   const { user } = useAuth();
@@ -15,9 +15,11 @@ export default function Autores() {
   const [autores, setAutores] = useState([]);
   const [editoras, setEditoras] = useState([]);
   const [filterEditora, setFilterEditora] = useState("__all__");
+  const [filterStatus, setFilterStatus] = useState("all"); // all | pending | configured
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: "", editora_id: "", admin_fee_percent: 0, email: "" });
+  const [syncing, setSyncing] = useState(false);
   const bulkRef = useRef(null);
 
   async function refresh() {

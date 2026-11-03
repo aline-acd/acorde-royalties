@@ -7,8 +7,8 @@ import requests
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://autor-editora-hub.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = "aline@acordemusica.com.br"
-ADMIN_PASSWORD = "acorde2026"
+ADMIN_EMAIL = os.environ["ADMIN_EMAIL"]
+ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 
 # ------- fixtures -------

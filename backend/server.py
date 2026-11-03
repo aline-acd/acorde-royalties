@@ -130,9 +130,9 @@ async def _startup():
     await db.repasses.create_index([("scope", 1), ("scope_id", 1), ("competencia", 1)], unique=True)
 
     # seed admin
-    admin_email = os.environ.get("ADMIN_EMAIL", "aline@acordemusica.com.br").lower()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "acorde2026")
-    admin_name = os.environ.get("ADMIN_NAME", "Aline")
+    admin_email = os.environ["ADMIN_EMAIL"].lower()
+    admin_password = os.environ["ADMIN_PASSWORD"]
+    admin_name = os.environ.get("ADMIN_NAME", "Admin")
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
         await db.users.insert_one(
@@ -212,6 +212,8 @@ def _dump_editora(doc):
         "admin_fee_percent": doc.get("admin_fee_percent", 0.0),
         "email": doc.get("email", ""),
         "has_login": bool(doc.get("user_id")),
+        "needs_review": bool(doc.get("needs_review", False)),
+        "auto_created": bool(doc.get("auto_created", False)),
         "created_at": doc.get("created_at"),
     }
 
@@ -259,6 +261,8 @@ async def update_editora(editora_id: str, payload: EditoraPatch, request: Reques
         updates["name_norm"] = _norm(updates["name"])
     if "email" in updates:
         updates["email"] = (updates["email"] or "").lower().strip()
+    # Any manual edit clears the pending-review flag
+    updates["needs_review"] = False
     await db.editoras.update_one({"_id": ObjectId(editora_id)}, {"$set": updates})
     doc = await db.editoras.find_one({"_id": ObjectId(editora_id)})
     return _dump_editora(doc)
@@ -287,7 +291,12 @@ async def bulk_editoras(request: Request, file: UploadFile = File(...)):
         if existing:
             await db.editoras.update_one(
                 {"_id": existing["_id"]},
-                {"$set": {"admin_fee_percent": r["taxa_admin"], "cnpj": r.get("cnpj") or existing.get("cnpj", ""), "email": r.get("email") or existing.get("email", "")}},
+                {"$set": {
+                    "admin_fee_percent": r["taxa_admin"],
+                    "cnpj": r.get("cnpj") or existing.get("cnpj", ""),
+                    "email": r.get("email") or existing.get("email", ""),
+                    "needs_review": False,
+                }},
             )
             updated += 1
         else:
@@ -298,6 +307,7 @@ async def bulk_editoras(request: Request, file: UploadFile = File(...)):
                     "cnpj": r.get("cnpj", ""),
                     "email": r.get("email", "").lower(),
                     "admin_fee_percent": r["taxa_admin"],
+                    "needs_review": False,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
@@ -346,6 +356,8 @@ def _dump_autor(doc, editora_name=""):
         "editora_name": editora_name,
         "admin_fee_percent": doc.get("admin_fee_percent", 0.0),
         "email": doc.get("email", ""),
+        "needs_review": bool(doc.get("needs_review", False)),
+        "auto_created": bool(doc.get("auto_created", False)),
         "created_at": doc.get("created_at"),
     }
 
@@ -400,6 +412,7 @@ async def update_autor(autor_id: str, payload: AutorPatch, request: Request):
         updates["name_norm"] = _norm(updates["name"])
     if "email" in updates:
         updates["email"] = (updates["email"] or "").lower().strip()
+    updates["needs_review"] = False
     await db.autores.update_one({"_id": ObjectId(autor_id)}, {"$set": updates})
     doc = await db.autores.find_one({"_id": ObjectId(autor_id)})
     return _dump_autor(doc)
@@ -432,7 +445,7 @@ async def bulk_autores(request: Request, file: UploadFile = File(...)):
         existing = await db.autores.find_one({"name_norm": name_norm, "editora_id": editora_id})
         if existing:
             await db.autores.update_one(
-                {"_id": existing["_id"]}, {"$set": {"admin_fee_percent": r["taxa_admin"]}}
+                {"_id": existing["_id"]}, {"$set": {"admin_fee_percent": r["taxa_admin"], "needs_review": False}}
             )
             updated += 1
         else:
@@ -443,6 +456,7 @@ async def bulk_autores(request: Request, file: UploadFile = File(...)):
                         "name_norm": name_norm,
                         "editora_id": editora_id,
                         "admin_fee_percent": r["taxa_admin"],
+                        "needs_review": False,
                         "created_at": datetime.now(timezone.utc).isoformat(),
                     }
                 )
@@ -462,6 +476,96 @@ async def _store_rows(rows: list[dict], upload_id: str, rtype: str):
         r["type"] = rtype
     await db.royalty_rows.insert_many(rows)
     return len(rows)
+
+
+async def _auto_discover(rtype: str, rows: list[dict]) -> dict:
+    """After an upload, auto-create stub editoras/autores for every unique
+    titular/nome found in the data. Existing records are preserved untouched.
+    Stubs have admin_fee_percent=0 and needs_review=True so they appear as
+    'pending' until an admin configures the taxa."""
+    now = datetime.now(timezone.utc).isoformat()
+    new_editoras, new_autores = 0, 0
+
+    if rtype in ("geral", "editora"):
+        # unique editoras
+        seen = {}
+        for r in rows:
+            name = (r.get("editora_nome") or r.get("titular") or "").strip()
+            if not name:
+                continue
+            key = _norm(name)
+            if key and key not in seen:
+                seen[key] = name
+        for name_norm, name in seen.items():
+            existing = await db.editoras.find_one({"name_norm": name_norm})
+            if not existing:
+                await db.editoras.insert_one({
+                    "name": name,
+                    "name_norm": name_norm,
+                    "cnpj": "",
+                    "email": "",
+                    "admin_fee_percent": 0.0,
+                    "needs_review": True,
+                    "auto_created": True,
+                    "created_at": now,
+                })
+                new_editoras += 1
+
+    if rtype == "autor":
+        # unique (titular, nome) pairs, resolving editora_id by titular_norm
+        pairs = {}
+        for r in rows:
+            name = (r.get("nome") or "").strip()
+            titular = (r.get("titular") or "").strip()
+            if not name:
+                continue
+            key = (_norm(name), _norm(titular))
+            if key not in pairs:
+                pairs[key] = (name, titular)
+        # make sure the editoras exist first (same auto-stub logic)
+        unique_editoras = {}
+        for (_, t_norm), (_, titular) in pairs.items():
+            if t_norm and t_norm not in unique_editoras:
+                unique_editoras[t_norm] = titular
+        for t_norm, titular in unique_editoras.items():
+            existing = await db.editoras.find_one({"name_norm": t_norm})
+            if not existing:
+                await db.editoras.insert_one({
+                    "name": titular,
+                    "name_norm": t_norm,
+                    "cnpj": "",
+                    "email": "",
+                    "admin_fee_percent": 0.0,
+                    "needs_review": True,
+                    "auto_created": True,
+                    "created_at": now,
+                })
+                new_editoras += 1
+        # now autores
+        for (n_norm, t_norm), (name, titular) in pairs.items():
+            editora_id = None
+            if t_norm:
+                ed = await db.editoras.find_one({"name_norm": t_norm})
+                if ed:
+                    editora_id = str(ed["_id"])
+            existing = await db.autores.find_one({"name_norm": n_norm, "editora_id": editora_id})
+            if not existing:
+                try:
+                    await db.autores.insert_one({
+                        "name": name,
+                        "name_norm": n_norm,
+                        "editora_id": editora_id,
+                        "email": "",
+                        "admin_fee_percent": 0.0,
+                        "needs_review": True,
+                        "auto_created": True,
+                        "created_at": now,
+                    })
+                    new_autores += 1
+                except Exception:
+                    pass
+
+    return {"new_editoras": new_editoras, "new_autores": new_autores}
 
 
 @api.post("/uploads/{report_type}")
@@ -493,7 +597,22 @@ async def upload_report(report_type: str, request: Request, file: UploadFile = F
     res = await db.uploads.insert_one(upload_doc)
     upload_id = str(res.inserted_id)
     stored = await _store_rows(rows, upload_id, report_type)
-    return {"upload_id": upload_id, "type": report_type, "rows": stored, "competencia": competencia}
+    discovery = await _auto_discover(report_type, rows)
+    # Update upload with discovery results
+    await db.uploads.update_one({"_id": res.inserted_id}, {"$set": {"discovery": discovery}})
+
+    pending_editoras = await db.editoras.count_documents({"needs_review": True})
+    pending_autores = await db.autores.count_documents({"needs_review": True})
+
+    return {
+        "upload_id": upload_id,
+        "type": report_type,
+        "rows": stored,
+        "competencia": competencia,
+        "discovery": discovery,
+        "pending_editoras": pending_editoras,
+        "pending_autores": pending_autores,
+    }
 
 
 @api.get("/uploads")
@@ -1020,6 +1139,160 @@ async def send_notifications(payload: SendNotificationsIn, request: Request):
         await _send_autor_batch()
 
     return results
+
+
+# ---------------------------------------------- Descoberta retroativa
+
+@api.post("/discover/sync")
+async def discover_sync(request: Request):
+    """Scan all royalty rows already in DB and auto-create any missing
+    editoras/autores. Useful when data was imported before auto-discovery
+    existed, or when a report was re-imported after record deletion.
+    Returns totals and lists of pending (needs_review) items."""
+    user = await get_current_user(request)
+    require_admin(user)
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Editoras: union of titular_norm (editora/autor rows) + editora_norm (geral)
+    editoras_norms = set()
+    editoras_names = {}
+    async for r in db.royalty_rows.find({"type": {"$in": ["editora", "autor"]}}, {"titular": 1, "titular_norm": 1}):
+        n = r.get("titular_norm")
+        if n and n not in editoras_norms:
+            editoras_norms.add(n)
+            editoras_names[n] = r.get("titular", "")
+    async for r in db.royalty_rows.find({"type": "geral"}, {"editora_nome": 1, "editora_norm": 1}):
+        n = r.get("editora_norm")
+        if n and n not in editoras_norms:
+            editoras_norms.add(n)
+            editoras_names[n] = r.get("editora_nome", "")
+
+    new_editoras = 0
+    for norm, name in editoras_names.items():
+        existing = await db.editoras.find_one({"name_norm": norm})
+        if not existing and name:
+            await db.editoras.insert_one({
+                "name": name,
+                "name_norm": norm,
+                "cnpj": "",
+                "email": "",
+                "admin_fee_percent": 0.0,
+                "needs_review": True,
+                "auto_created": True,
+                "created_at": now,
+            })
+            new_editoras += 1
+
+    # Autores: unique (nome_norm, titular_norm) from autor rows
+    pairs = {}
+    async for r in db.royalty_rows.find({"type": "autor"}, {"nome": 1, "nome_norm": 1, "titular": 1, "titular_norm": 1}):
+        n, t = r.get("nome_norm"), r.get("titular_norm")
+        if n and (n, t) not in pairs:
+            pairs[(n, t)] = (r.get("nome", ""), r.get("titular", ""))
+
+    new_autores = 0
+    for (n_norm, t_norm), (name, titular) in pairs.items():
+        editora_id = None
+        if t_norm:
+            ed = await db.editoras.find_one({"name_norm": t_norm})
+            if ed:
+                editora_id = str(ed["_id"])
+        existing = await db.autores.find_one({"name_norm": n_norm, "editora_id": editora_id})
+        if not existing:
+            try:
+                await db.autores.insert_one({
+                    "name": name,
+                    "name_norm": n_norm,
+                    "editora_id": editora_id,
+                    "email": "",
+                    "admin_fee_percent": 0.0,
+                    "needs_review": True,
+                    "auto_created": True,
+                    "created_at": now,
+                })
+                new_autores += 1
+            except Exception:
+                pass
+
+    pending_editoras = await db.editoras.count_documents({"needs_review": True})
+    pending_autores = await db.autores.count_documents({"needs_review": True})
+    return {
+        "new_editoras": new_editoras,
+        "new_autores": new_autores,
+        "pending_editoras": pending_editoras,
+        "pending_autores": pending_autores,
+    }
+
+
+def _csv_response(rows: list[list[str]], filename: str) -> StreamingResponse:
+    buf = io.StringIO()
+    import csv as _csv
+    writer = _csv.writer(buf, delimiter=",", quotechar='"', quoting=_csv.QUOTE_MINIMAL)
+    for row in rows:
+        writer.writerow(row)
+    data = buf.getvalue().encode("utf-8-sig")  # BOM for Excel BR
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@api.get("/discover/pending/editoras.csv")
+async def pending_editoras_csv(request: Request):
+    """CSV template with pending editoras (admin_fee=0 or needs_review=True).
+    Format matches /api/editoras/bulk: nome,cnpj,taxa_admin,email."""
+    user = await get_current_user(request)
+    require_admin(user)
+    docs = await db.editoras.find({"needs_review": True}).sort("name", 1).to_list(5000)
+    rows = [["nome", "cnpj", "taxa_admin", "email"]]
+    for d in docs:
+        rows.append([
+            d.get("name", ""),
+            d.get("cnpj", ""),
+            "",  # leave blank so admin fills
+            d.get("email", ""),
+        ])
+    return _csv_response(rows, "acorde_editoras_pendentes.csv")
+
+
+@api.get("/discover/pending/autores.csv")
+async def pending_autores_csv(request: Request):
+    user = await get_current_user(request)
+    require_admin(user)
+    docs = await db.autores.find({"needs_review": True}).sort("name", 1).to_list(50000)
+    # map editora ids -> name
+    ed_ids = {d.get("editora_id") for d in docs if d.get("editora_id")}
+    ed_map = {}
+    if ed_ids:
+        async for e in db.editoras.find({"_id": {"$in": [ObjectId(x) for x in ed_ids if x]}}):
+            ed_map[str(e["_id"])] = e["name"]
+    rows = [["nome", "editora", "taxa_admin", "email"]]
+    for d in docs:
+        rows.append([
+            d.get("name", ""),
+            ed_map.get(d.get("editora_id", ""), ""),
+            "",
+            d.get("email", ""),
+        ])
+    return _csv_response(rows, "acorde_autores_pendentes.csv")
+
+
+@api.get("/discover/stats")
+async def discover_stats(request: Request):
+    user = await get_current_user(request)
+    require_admin(user)
+    pending_editoras = await db.editoras.count_documents({"needs_review": True})
+    total_editoras = await db.editoras.count_documents({})
+    pending_autores = await db.autores.count_documents({"needs_review": True})
+    total_autores = await db.autores.count_documents({})
+    return {
+        "pending_editoras": pending_editoras,
+        "total_editoras": total_editoras,
+        "pending_autores": pending_autores,
+        "total_autores": total_autores,
+    }
 
 
 @api.get("/")
