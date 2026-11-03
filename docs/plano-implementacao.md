@@ -8,7 +8,10 @@
 
 **Critérios de aceite:** CSVs revisados pela Acorde; protótipo aprovado para seguir.
 
-## Fase 1 — Banco e importação
+## Fase 1 — Banco e importação (em andamento)
+- [x] Schema aplicado no namespace `royalties` do branch `acorde-portal-dev` (projeto Neon ACORDE). Tabelas existentes no branch não foram alteradas.
+- [x] Carga inicial: 20 editoras, 82 autores, 20 taxas de editora e 82 taxas de autor (herdadas da editora; Siffra = 0%). Divergências: 0.
+- [ ] Carga dos lançamentos (scripts/import_abramus.py) e conferência de totais contra os PDFs.
 - Aplicar `db/schema.sql` no branch `acorde-portal-dev`.
 - `scripts/import_abramus.py` gera lançamentos normalizados e marca conflitos de competência.
 - Carga dos CSVs de cadastro.
