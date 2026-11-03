@@ -1,0 +1,12 @@
+# Dados reais nunca entram no repositório
+dados-locais/
+*.xlsx
+*.csv
+uploads/
+# Ambiente e segredos
+.env
+.env.*
+.env.local
+node_modules/
+.vercel/
+.DS_Store

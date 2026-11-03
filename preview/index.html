@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acorde Royalties — Dashboard (prévia)</title>
+<style>
+  :root{
+    --grafite:#14171A; --offwhite:#F2EFE9; --amarelo:#FFF51C;
+    --superficie:#1B1F23; --borda:#2B3035; --secundario:#A8A39A;
+    --fonte:"Avenir Next LT Pro","Avenir Next","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--grafite);color:var(--offwhite);font-family:var(--fonte);-webkit-font-smoothing:antialiased}
+  header{display:flex;justify-content:space-between;align-items:center;padding:20px 32px;border-bottom:1px solid var(--borda)}
+  .marca{font-weight:700;letter-spacing:.04em}
+  .marca span{background:var(--amarelo);color:var(--grafite);padding:2px 8px;margin-right:8px;border-radius:2px}
+  .aviso{background:var(--amarelo);color:var(--grafite);font-size:12px;font-weight:700;padding:6px 10px;border-radius:2px;letter-spacing:.06em}
+  main{padding:28px 32px;max-width:1280px;margin:0 auto}
+  .topo{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:24px}
+  h1{font-size:30px;margin:0 0 4px}
+  .sec{color:var(--secundario);font-size:14px;margin:0}
+  label{font-size:12px;color:var(--secundario);letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:6px}
+  select{background:var(--superficie);color:var(--offwhite);border:1px solid var(--borda);padding:10px 12px;font:inherit;min-width:220px;border-radius:2px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+  .kpi{background:var(--superficie);border:1px solid var(--borda);padding:18px}
+  .kpi.destaque{background:var(--amarelo);color:var(--grafite);border-color:var(--amarelo)}
+  .kpi small{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
+  .kpi strong{display:block;font-size:24px;margin-top:8px;font-variant-numeric:tabular-nums}
+  .grid{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+  .card{background:var(--superficie);border:1px solid var(--borda);padding:20px}
+  .card h2{font-size:17px;margin:0 0 4px}
+  .card .sub{color:var(--secundario);font-size:13px;margin:0 0 16px}
+  .rank{list-style:none;padding:0;margin:0}
+  .rank li{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--borda);font-size:14px}
+  .rank li:last-child{border-bottom:0}
+  .rank b{font-variant-numeric:tabular-nums;color:var(--amarelo);font-weight:700}
+  .seg{display:inline-flex;border:1px solid var(--borda);margin-bottom:14px}
+  .seg button{background:none;border:0;color:var(--secundario);padding:8px 14px;font:inherit;font-size:13px;cursor:pointer}
+  .seg button.ativo{background:var(--amarelo);color:var(--grafite);font-weight:700}
+  .seg button:focus-visible{outline:2px solid var(--amarelo);outline-offset:2px}
+  svg text{fill:var(--secundario);font-family:var(--fonte);font-size:11px}
+  .barras{margin-top:8px}
+  .barra{display:grid;grid-template-columns:150px 1fr 110px;gap:10px;align-items:center;font-size:13px;margin-bottom:10px}
+  .barra .trilho{background:var(--borda);height:10px}
+  .barra .preench{background:var(--offwhite);height:10px}
+  .barra.topo .preench{background:var(--amarelo)}
+  .barra span:last-child{text-align:right;font-variant-numeric:tabular-nums}
+  @media (max-width:900px){.kpis{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="marca"><span>A</span>ACORDE ROYALTIES</div>
+  <div class="aviso">DADOS DE EXEMPLO · PRÉVIA</div>
+</header>
+<main>
+  <div class="topo">
+    <div>
+      <p class="sec">Dashboard · Administração</p>
+      <h1>Visão geral</h1>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div><label for="entidade">Entidade</label>
+        <select id="entidade"></select></div>
+      <div><label for="periodo">Período</label>
+        <select id="periodo">
+          <option value="12" selected>Últimos 12 meses</option>
+          <option value="6">Últimos 6 meses</option>
+          <option value="3">Últimos 3 meses</option>
+          <option value="mes">Selecionar mês</option>
+        </select>
+        <select id="mes" hidden></select></div>
+    </div>
+  </div>
+
+  <section class="kpis">
+    <div class="kpi destaque"><small>Total coletado (editora + autores)</small><strong id="k-total"></strong></div>
+    <div class="kpi"><small>Valor bruto editora</small><strong id="k-ed"></strong></div>
+    <div class="kpi"><small>Valor bruto autores</small><strong id="k-au"></strong></div>
+    <div class="kpi"><small>Taxa administrativa</small><strong id="k-taxa"></strong></div>
+  </section>
+
+  <section class="grid">
+    <div class="card">
+      <h2 id="titulo-serie">Evolução mensal</h2>
+      <p class="sub">Soma do bruto da editora e dos autores, por competência.</p>
+      <svg id="serie" viewBox="0 0 760 280" width="100%" role="img" aria-label="Evolução mensal"></svg>
+      <div class="seg" role="group" aria-label="Quebrar receita por">
+        <button class="ativo" data-modo="fonte">Por fonte</button>
+        <button data-modo="regiao">Por região</button>
+      </div>
+      <div id="quebra" class="barras"></div>
+    </div>
+
+    <div class="card">
+      <h2>Top 10 editoras</h2>
+      <p class="sub">Rendimento total no período</p>
+      <ol class="rank" id="top-ed"></ol>
+      <div style="height:22px"></div>
+      <h2>Top 10 autores</h2>
+      <p class="sub">Rendimento total no período</p>
+      <ol class="rank" id="top-au"></ol>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ---- Dados de exemplo (determinísticos). Nenhum dado real de cliente aqui. ---- */
+const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const FONTES = ["Spotify","YouTube","Apple","Amazon","TikTok","Deezer"];
+const REGIOES = ["Brasil","Estados Unidos","Chile","Colômbia","Outros"];
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const nomes = ["Editora Alfa","Music Beta","Estúdio Gama","Produções Delta","Records Épsilon","Edições Zeta","Sonora Eta","Teta Music","Iota Records","Kappa Edições","Lambda Produções","Mu Studio","Nu Records","Xi Music"];
+const autoresNomes = Array.from({length:24},(_,i)=>`Autor ${String(i+1).padStart(2,"0")}`);
+
+const ENTIDADES = [
+  ...nomes.map((n,i)=>({id:"e"+i,tipo:"Editora",nome:n,base:800+rnd()*4000})),
+  ...autoresNomes.map((n,i)=>({id:"a"+i,tipo:"Autor",nome:n,base:50+rnd()*900}))
+];
+// série: 12 meses x fonte x região (valores de exemplo)
+const serieMes = MESES.map((m,idx)=>{
+  const fator = 0.8 + idx*0.03;
+  return {mes:m, fonte:FONTES.map(f=>({k:f,v:(900+rnd()*1500)*fator})), regiao:REGIOES.map(r=>({k:r,v:(600+rnd()*1800)*fator}))};
+});
+function valorEntidade(e, periodo){
+  const f = e.tipo==="Editora" ? 1.0 : 0.6;
+  return {total: e.base*f*periodo/12*12, bruto: e.base*f*(e.tipo==="Editora"?0.55:0.45)};
+}
+const fmt = v => v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+
+const sel = document.getElementById("entidade");
+sel.innerHTML = `<option value="">Todas (visão geral)</option>` +
+  ENTIDADES.map(e=>`<option value="${e.id}">${e.tipo}: ${e.nome}</option>`).join("");
+const periodoSel = document.getElementById("periodo");
+let modo = "fonte";
+
+function render(){
+  const mesSel = document.getElementById("mes");
+  mesSel.hidden = periodoSel.value !== "mes";
+  if (mesSel.hidden) mesSel.innerHTML = "";
+  else if (!mesSel.options.length) mesSel.innerHTML = MESES.map((m,i)=>`<option value="${i}" ${i===11?"selected":""}>${m}</option>`).join("");
+  const n = periodoSel.value === "mes" ? 1 : Number(periodoSel.value);
+  const ids = sel.value;
+  const alvo = ENTIDADES.find(e=>e.id===ids);
+  const fatorSerie = alvo ? (alvo.tipo==="Editora"?0.5:0.25) : 1;
+  const meses = periodoSel.value === "mes"
+      ? [serieMes[Number(mesSel.value||11)]]
+      : serieMes.slice(-n);
+
+  // KPIs
+  const bruEd = meses.reduce((s,m)=>s+m.fonte.reduce((a,b)=>a+b.v,0),0)*0.55*fatorSerie;
+  const bruAu = meses.reduce((s,m)=>s+m.fonte.reduce((a,b)=>a+b.v,0),0)*0.45*fatorSerie;
+  const total = bruEd + bruAu;
+  document.getElementById("k-total").textContent = fmt(total);
+  document.getElementById("k-ed").textContent = fmt(bruEd);
+  document.getElementById("k-au").textContent = fmt(bruAu);
+  document.getElementById("k-taxa").textContent = fmt(total*0.12);
+  document.getElementById("titulo-serie").textContent = alvo ? `Evolução mensal · ${alvo.nome}` : "Evolução mensal · Geral";
+
+  // Série (editora + autores somados)
+  const serie = meses.map(m=>m.fonte.reduce((a,b)=>a+b.v,0)*fatorSerie);
+  const max = Math.max(...serie)*1.15, W=760, H=280, pad=36;
+  const x = i => pad + i*((W-pad*2)/(serie.length-1||1));
+  const y = v => H-pad - (v/max)*(H-pad*2);
+  const pts = serie.map((v,i)=>`${x(i)},${y(v)}`).join(" ");
+  document.getElementById("serie").innerHTML = `
+    ${[0,.25,.5,.75,1].map(t=>`<line x1="${pad}" x2="${W-pad}" y1="${y(max*t)}" y2="${y(max*t)}" stroke="#2B3035"/>
+      <text x="4" y="${y(max*t)+4}">${Math.round(max*t/1000)}k</text>`).join("")}
+    <polyline points="${pts}" fill="none" stroke="#FFF51C" stroke-width="3"/>
+    ${serie.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="#F2EFE9"/>
+      <text x="${x(i)-10}" y="${H-10}">${meses[i].mes}</text>`).join("")}`;
+
+  // Quebra por fonte ou região
+  const lista = (modo==="fonte" ? meses.flatMap(m=>m.fonte) : meses.flatMap(m=>m.regiao));
+  const agreg = {};
+  lista.forEach(({k,v})=>agreg[k]=(agreg[k]||0)+v*fatorSerie);
+  const itens = Object.entries(agreg).sort((a,b)=>b[1]-a[1]);
+  const mx = itens[0][1];
+  document.getElementById("quebra").innerHTML = itens.map(([k,v],i)=>`
+    <div class="barra ${i===0?"topo":""}"><span>${k}</span>
+      <div class="trilho"><div class="preench" style="width:${(v/mx*100).toFixed(1)}%"></div></div>
+      <span>${fmt(v)}</span></div>`).join("");
+
+  // Rankings (dentro do período)
+  const ranking = (tipo) => ENTIDADES.filter(e=>e.tipo===tipo)
+      .map(e=>({...e, v: e.base*(tipo==="Editora"?1:0.6)*n/12*12/12 *1}))
+      .sort((a,b)=>b.v-a.v).slice(0,10);
+  const r1 = ranking("Editora"), r2 = ranking("Autor");
+  const rend = (lst)=>lst.map(e=>`<li><span>${e.nome}</span><b>${fmt(e.v)}</b></li>`).join("");
+  document.getElementById("top-ed").innerHTML = rend(r1);
+  document.getElementById("top-au").innerHTML = rend(r2);
+}
+document.querySelectorAll(".seg button").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".seg button").forEach(x=>x.classList.remove("ativo"));
+  b.classList.add("ativo"); modo=b.dataset.modo; render();
+}));
+sel.addEventListener("change",render);
+periodoSel.addEventListener("change",render);
+document.getElementById("mes").addEventListener("change",render);
+render();
+</script>
+</body>
+</html>
